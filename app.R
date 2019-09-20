@@ -1,11 +1,16 @@
 library(shiny)
 
 ui <- navbarPage(
+  
+  ###### Full app elements ######
+  
   # Allow for fluid page elements
   fluid = TRUE,
   
   # Main title
   title = "Fun with Shiny",
+  
+  ###### Simple Walking App UI ######
   
   tabPanel(
     title = "Simple Walking App",
@@ -19,9 +24,9 @@ ui <- navbarPage(
     # Explanation of first attempt at something simple
     fluidRow(
       column(10,
-             p("Let's try something really simple. The following buttons should allow walking and resting,",
-               " showing the distance walked and how much stamina is left.", 
-               " Walking is impossible without stamina. Resting replenishes stamina."))
+             p("This is a very simple, first app. The following buttons should allow walking and resting,",
+               "showing the distance walked and how much stamina is left.", 
+               "Walking is impossible without stamina. Resting replenishes stamina."))
     ),
     
     # Buttons for walking and resting
@@ -48,25 +53,41 @@ ui <- navbarPage(
     )
   ),
 
+  ###### File Import & Display App ######
+  
   tabPanel(
     title = "File Import & Display App",
     
     # Title
     fluidRow(
       column(12, 
-             h1("Nicole's Second Shiny App"))
+             h1("File Import & Display App"))
     ),
     
     # Explanation of first attempt at something simple
     fluidRow(
       column(10,
-             p("This app takes in four files, combines the information, and produces a graphic and stats on the information."))
+             p("This app takes in csv files, combines the information, and produces both a graphic and statistics on the information based on desired colors."),
+             h3("Input Data Files"),
+             p("There can be multiple input data files, but each is expected to have the following column names: SampleID, X, Y."),
+             h3("Color Data File"),
+             p("Only one color data file is currently allowed. This file is expected to have the following column names: SampleID, Color.",
+               "The SampleIDs from the color data file should match up with the SampleIDs from the input data files."),
+             h4("Note:"),
+             p("The file upload may not allow for changing/adding/removing files after first upload.",
+                "Additionally, the color file is expected to be uploaded after data files.")) 
     ),
     
-    # File input
+    # File input for data
     fluidRow(
       column(4, 
-             fileInput(inputId = "file", label = "Input data"))
+             fileInput(inputId = "datafile", label = "Input data files", multiple = TRUE))
+    ),
+    
+    # File input for color data
+    fluidRow(
+      column(4,
+             fileInput(inputId = "colorfile", label = "Input Color Data File"))
     ),
     
     # Plot output
@@ -75,13 +96,17 @@ ui <- navbarPage(
              plotOutput(outputId = "plot"))
     ),
     
-    # Color input
+    # Color input box
     fluidRow(
-      column(3, 
-             textInput(inputId = "color", label = "Input colors, separated by spaces")),
-      
-      column(1, 
-             actionButton(inputId = "getstats", label = "Get Statistics"))
+      column(4, 
+             textInput(inputId = "color", label = "Input colors, separated by spaces"))
+    ),
+    
+    # Button for color input action
+    fluidRow(
+      column(1,
+             column(1, 
+                    actionButton(inputId = "getstats", label = "Get Statistics")))
     ),
     
     # Stats output based on color options
@@ -148,9 +173,45 @@ server <- function(input, output) {
   # Reactive Value for the data
   data <- reactiveValues()
   
-  # Action to take when an input file is uploaded
-  observeEvent(input$file, {
-    data$table <- reactive(read.csv(input$file$name))
+  # Action to take when data input files are uploaded
+  # Should open each file and merge into a single table
+  observeEvent(input$datafile, {
+    
+    # Open all the data files and combine into a single table
+    # Assume all are of same style and will have no conflicts with how I am merging these
+    # Need to check number of files to ensure that there are no errors if only one file is uploaded
+    if (dim(input$datafile)[1] == 1) {
+      # Only one file uploaded
+      data$table <- reactive(read.csv(input$datafile$datapath))
+    } else { # If observeEvent activated, then there should be 1 or more files, never less
+      # Open first file into temporary storage
+      mainTempData <- read.csv(input$datafile$datapath[1])
+      # Go through files starting with the second one and merge each into the main temp data
+      for (i in 2:dim(input$datafile)[1]) {
+        tempData <- read.csv(input$datafile$datapath[i])
+        mainTempData <- merge(mainTempData, tempData, all = TRUE)
+      }
+      
+      # Give data the full table 
+      data$table <- reactive(mainTempData)
+    }
+    
+  })
+  
+  # Action to take when color input file is uploaded
+  # Should merge the color data into the full table from the data input upload
+  # Currently assumes the data input files have been uploaded and correctly merged before the color file is added
+  observeEvent(input$colorfile, {
+    
+    # Open file
+    colorData <- read.csv(input$colorfile$datapath)
+    
+    # Add in color to full dataset via temp storage
+    tempData <- merge(data$table(), colorData, by="SampleID")
+    data$table <- reactive(tempData)
+
+    
+    #data$table <- reactive(read.csv(input$file$datapath))
     output$plot <- renderPlot(
       plot(data$table()$X, log(data$table()$Y), xlab="X", ylab="ln(Y)", col=tolower(data$table()$Color), pch=16))
   })
