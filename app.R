@@ -18,15 +18,54 @@ plot_color_scatter <- function(input, output, reactive_dataset) {
          pch = 16))
 }
 
+merge_data_files <- function(input, reactive_dataset) {
+  # Open all the data files and combine into a single table
+  # Assume all are of same style and will have no conflicts with how 
+  #   I am merging these
+  # Need to check number of files to ensure that there are no errors 
+  #   if only one file is uploaded
+  if (dim(input$datafile)[1] == 1) {
+    # Only one file uploaded
+    reactive_dataset$table <- reactive(read.csv(input$datafile$datapath))
+  } else { # Should be 1 or more files, never less
+    # Open first file into temporary storage
+    main_temp_data <- read.csv(input$datafile$datapath[1])
+    # Go through files starting with the second one and merge each 
+    # into the main temp data
+    for (i in 2:dim(input$datafile)[1]) {
+      temp_data <- read.csv(input$datafile$datapath[i])
+      main_temp_data <- merge(main_temp_data, temp_data, all = TRUE)
+    }
+    
+    # Give data the full table 
+    reactive_dataset$table <- reactive(main_temp_data)
+  }
+  
+  # Check if color data is available; if yes, merge into full table
+  if (!is.null(input$colorfile)){
+    merge_color_file(input, reactive_dataset) 
+  } # else just wait for color file to be uploaded
+}
+
 # Merge the color file into the dataset
 merge_color_file <- function(input, reactive_dataset) {
   
   # Open file
   color_data <- read.csv(input$colorfile$datapath)
   
-  # Add in color to full dataset via temp storage
-  temp_data <- merge(reactive_dataset$table(), color_data, by = "SampleID")
-  reactive_dataset$table <- reactive({temp_data})
+  # Check if color has already been added in before
+  # Have to merge differently, if so
+  if ("Color" %in% colnames(reactive_dataset$table())){
+    # Choosing to just drop the color column first, then merge, since seems simpler
+    temp_data <- reactive_dataset$table()[c("SampleID", "X", "Y")]
+    # Add in color to full dataset via temp storage
+    temp_data2 <- merge(temp_data, color_data, by = "SampleID")
+    reactive_dataset$table <- reactive(temp_data2) 
+  } else {
+    # Add in color to full dataset via temp storage
+    temp_data <- merge(reactive_dataset$table(), color_data, by = "SampleID")
+    reactive_dataset$table <- reactive(temp_data) 
+  }
 }
 
 # Main UI function
@@ -227,33 +266,11 @@ server <- function(input, output) {
   # Should open each file and merge into a single table
   observeEvent(input$datafile, {
     
-    # Open all the data files and combine into a single table
-    # Assume all are of same style and will have no conflicts with how 
-    #   I am merging these
-    # Need to check number of files to ensure that there are no errors 
-    #   if only one file is uploaded
-    if (dim(input$datafile)[1] == 1) {
-      # Only one file uploaded
-      data$table <- reactive(read.csv(input$datafile$datapath))
-    } else { # Should be 1 or more files, never less
-      # Open first file into temporary storage
-      main_temp_data <- read.csv(input$datafile$datapath[1])
-      # Go through files starting with the second one and merge each 
-      # into the main temp data
-      for (i in 2:dim(input$datafile)[1]) {
-        temp_data <- read.csv(input$datafile$datapath[i])
-        main_temp_data <- merge(main_temp_data, temp_data, all = TRUE)
-      }
-      
-      # Give data the full table 
-      data$table <- reactive(main_temp_data)
-      
-      # Check if color data is available; if yes, merge into full table
-      req(input$colorfile)
-      
-      merge_color_file(input, data)
-      plot_color_scatter(input, output, data)
-    }
+    # Merge the data into one table
+    merge_data_files(input, data)
+    
+    # Create scatterplot
+    plot_color_scatter(input, output, data)
     
   })
   
